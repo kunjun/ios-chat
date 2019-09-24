@@ -8,6 +8,7 @@
 
 #import "WFCLoginViewController.h"
 #import <WFChatClient/WFCChatClient.h>
+#import <WFChatUIKit/WFChatUIKit.h>
 #import "AppDelegate.h"
 #import "WFCBaseTabBarController.h"
 #import "AFNetworking.h"
@@ -48,7 +49,7 @@ alpha:1.0]
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+    self.view.backgroundColor = [WFCUConfigManager globalManager].backgroudColor;
     NSString *savedName = [[NSUserDefaults standardUserDefaults] stringForKey:@"savedName"];
    
     CGRect bgRect = self.view.bounds;
@@ -184,6 +185,10 @@ alpha:1.0]
             hud.label.text = @"发送失败";
             hud.offset = CGPointMake(0.f, MBProgressMaxOffset);
             [hud hideAnimated:YES afterDelay:1.f];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self.sendCodeBtn setTitle:@"发送验证码" forState:UIControlStateNormal];
+                self.sendCodeBtn.enabled = YES;
+            });
         }
     });
 }
@@ -193,7 +198,7 @@ alpha:1.0]
     manager.requestSerializer = [AFJSONRequestSerializer serializer];
     manager.responseSerializer.acceptableContentTypes = [NSSet setWithObject:@"application/json"];
     
-    [manager POST:[NSString stringWithFormat:@"http://%@:%d%@", APP_SERVER_HOST, APP_SERVER_PORT,@"/send_code"]
+    [manager POST:[NSString stringWithFormat:@"%@%@", APP_SERVER_ADDRESS, @"/send_code"]
        parameters:@{@"mobile":phoneNumber}
          progress:nil
           success:^(NSURLSessionDataTask * _Nonnull task, id  _Nullable responseObject) {
@@ -211,12 +216,12 @@ alpha:1.0]
           }];
 }
 
-- (void)login:(NSString *)user password:(NSString *)password success:(void(^)(NSString *userId, NSString *token))successBlock error:(void(^)(int errCode, NSString *message))errorBlock {
+- (void)login:(NSString *)user password:(NSString *)password success:(void(^)(NSString *userId, NSString *token, BOOL newUser))successBlock error:(void(^)(int errCode, NSString *message))errorBlock {
     AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
     manager.requestSerializer = [AFJSONRequestSerializer serializer];
     manager.responseSerializer.acceptableContentTypes = [NSSet setWithObject:@"application/json"];
     
-    [manager POST:[NSString stringWithFormat:@"http://%@:%d%@", APP_SERVER_HOST, APP_SERVER_PORT,@"/login"]
+    [manager POST:[NSString stringWithFormat:@"%@%@", APP_SERVER_ADDRESS, @"/login"]
        parameters:@{@"mobile":user, @"code":password, @"clientId":[[WFCCNetworkService sharedInstance] getClientId]}
          progress:nil
           success:^(NSURLSessionDataTask * _Nonnull task, id  _Nullable responseObject) {
@@ -224,7 +229,8 @@ alpha:1.0]
               if([dict[@"code"] intValue] == 0) {
                   NSString *userId = dict[@"result"][@"userId"];
                   NSString *token = dict[@"result"][@"token"];
-                  successBlock(userId, token);
+                  BOOL newUser = [dict[@"result"][@"register"] boolValue];
+                  successBlock(userId, token, newUser);
               } else {
                   errorBlock([dict[@"code"] intValue], dict[@"message"]);
               }
@@ -255,7 +261,7 @@ alpha:1.0]
   hud.label.text = @"登陆中...";
   [hud showAnimated:YES];
   
-    [self login:user password:password success:^(NSString *userId, NSString *token) {
+    [self login:user password:password success:^(NSString *userId, NSString *token, BOOL newUser) {
         [[NSUserDefaults standardUserDefaults] setObject:user forKey:@"savedName"];
         [[NSUserDefaults standardUserDefaults] setObject:token forKey:@"savedToken"];
         [[NSUserDefaults standardUserDefaults] setObject:userId forKey:@"savedUserId"];
@@ -265,7 +271,9 @@ alpha:1.0]
         
         dispatch_async(dispatch_get_main_queue(), ^{
           [hud hideAnimated:YES];
-            [UIApplication sharedApplication].delegate.window.rootViewController =  [WFCBaseTabBarController new];
+            WFCBaseTabBarController *tabBarVC = [WFCBaseTabBarController new];
+            tabBarVC.newUser = newUser;
+            [UIApplication sharedApplication].delegate.window.rootViewController =  tabBarVC;
         });
     } error:^(int errCode, NSString *message) {
         NSLog(@"login error with code %d, message %@", errCode, message);

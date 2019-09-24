@@ -112,14 +112,23 @@
 }
 
 - (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
-    NSString *token = [[[[deviceToken description] stringByReplacingOccurrencesOfString:@"<"
-                                                                             withString:@""]
-                        stringByReplacingOccurrencesOfString:@">"
-                        withString:@""]
-                       stringByReplacingOccurrencesOfString:@" "
-                       withString:@""];
-    
-    [[WFCCNetworkService sharedInstance] setDeviceToken:token];
+    if ([deviceToken isKindOfClass:[NSData class]]) {
+        const unsigned *tokenBytes = [deviceToken bytes];
+        NSString *hexToken = [NSString stringWithFormat:@"%08x%08x%08x%08x%08x%08x%08x%08x",
+                              ntohl(tokenBytes[0]), ntohl(tokenBytes[1]), ntohl(tokenBytes[2]),
+                              ntohl(tokenBytes[3]), ntohl(tokenBytes[4]), ntohl(tokenBytes[5]),
+                              ntohl(tokenBytes[6]), ntohl(tokenBytes[7])];
+        [[WFCCNetworkService sharedInstance] setDeviceToken:hexToken];
+    } else {
+        NSString *token = [[[[deviceToken description] stringByReplacingOccurrencesOfString:@"<"
+                                                                                 withString:@""]
+                            stringByReplacingOccurrencesOfString:@">"
+                            withString:@""]
+                           stringByReplacingOccurrencesOfString:@" "
+                           withString:@""];
+        
+        [[WFCCNetworkService sharedInstance] setDeviceToken:token];
+    }
 }
 
 - (void)applicationWillResignActive:(UIApplication *)application {
@@ -131,7 +140,7 @@
 - (void)applicationDidEnterBackground:(UIApplication *)application {
     // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
     // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
-    WFCCUnreadCount *unreadCount = [[WFCCIMService sharedWFCIMService] getUnreadCount:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0), @(1)]];
+    WFCCUnreadCount *unreadCount = [[WFCCIMService sharedWFCIMService] getUnreadCount:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0)]];
     [UIApplication sharedApplication].applicationIconBadgeNumber = unreadCount.unread;
 }
 
@@ -153,13 +162,17 @@
 
 - (void)onReceiveMessage:(NSArray<WFCCMessage *> *)messages hasMore:(BOOL)hasMore {
     if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
-        WFCCUnreadCount *unreadCount = [[WFCCIMService sharedWFCIMService] getUnreadCount:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0), @(1)]];
+        WFCCUnreadCount *unreadCount = [[WFCCIMService sharedWFCIMService] getUnreadCount:@[@(Single_Type), @(Group_Type), @(Channel_Type)] lines:@[@(0)]];
         int count = unreadCount.unread;
         [UIApplication sharedApplication].applicationIconBadgeNumber = count;
         
         for (WFCCMessage *msg in messages) {
             //当在后台活跃时收到新消息，需要弹出本地通知。有一种可能时客户端已经收到远程推送，然后由于voip/backgroud fetch在后台拉活了应用，此时会收到接收下来消息，因此需要避免重复通知
             if (([[NSDate date] timeIntervalSince1970] - (msg.serverTime - [WFCCNetworkService sharedInstance].serverDeltaTime)/1000) > 3) {
+                continue;
+            }
+            
+            if (msg.direction == MessageDirection_Send) {
                 continue;
             }
             
@@ -171,9 +184,9 @@
               localNote.alertBody = [msg digest];
               if (msg.conversation.type == Single_Type) {
                 WFCCUserInfo *sender = [[WFCCIMService sharedWFCIMService] getUserInfo:msg.conversation.target refresh:NO];
-                if (sender.name) {
+                if (sender.displayName) {
                     if (@available(iOS 8.2, *)) {
-                        localNote.alertTitle = sender.name;
+                        localNote.alertTitle = sender.displayName;
                     } else {
                         // Fallback on earlier versions
                     }
@@ -181,18 +194,26 @@
               } else if(msg.conversation.type == Group_Type) {
                   WFCCGroupInfo *group = [[WFCCIMService sharedWFCIMService] getGroupInfo:msg.conversation.target refresh:NO];
                   WFCCUserInfo *sender = [[WFCCIMService sharedWFCIMService] getUserInfo:msg.fromUser refresh:NO];
-                  if (sender.name && group.name) {
+                  if (sender.displayName && group.name) {
                       if (@available(iOS 8.2, *)) {
-                          localNote.alertTitle = [NSString stringWithFormat:@"%@@%@:", sender.name, group.name];
+                          localNote.alertTitle = [NSString stringWithFormat:@"%@@%@:", sender.displayName, group.name];
                       } else {
                           // Fallback on earlier versions
                       }
-                  }else if (sender.name) {
+                  }else if (sender.displayName) {
                       if (@available(iOS 8.2, *)) {
-                          localNote.alertTitle = sender.name;
+                          localNote.alertTitle = sender.displayName;
                       } else {
                           // Fallback on earlier versions
                       }
+                  }
+                  if (msg.status == Message_Status_Mentioned || msg.status == Message_Status_AllMentioned) {
+                      if (sender.displayName) {
+                          localNote.alertBody = [NSString stringWithFormat:@"%@在群里@了你", sender.displayName];
+                      } else {
+                          localNote.alertBody = @"有人在群里@了你";
+                      }
+                          
                   }
               }
               
@@ -210,7 +231,9 @@
 
 - (void)onConnectionStatusChanged:(ConnectionStatus)status {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (status == kConnectionStatusLogout) {
+        if (status == kConnectionStatusRejected || status == kConnectionStatusTokenIncorrect || status == kConnectionStatusSecretKeyMismatch) {
+            [[WFCCNetworkService sharedInstance] disconnect:YES];
+        } else if (status == kConnectionStatusLogout) {
             UIViewController *loginVC = [[WFCLoginViewController alloc] init];
             self.window.rootViewController = loginVC;
         } 
@@ -218,13 +241,19 @@
 }
 
 - (void)setupNavBar {
+    [WFCUConfigManager globalManager].naviBackgroudColor = [UIColor colorWithRed:0.1 green:0.27 blue:0.9 alpha:0.9];
+    [WFCUConfigManager globalManager].naviTextColor = [UIColor whiteColor];
+    
     [UIApplication sharedApplication].statusBarStyle = UIStatusBarStyleLightContent;
     
     UINavigationBar *bar = [UINavigationBar appearance];
-    bar.barTintColor = [UIColor colorWithRed:0.1 green:0.27 blue:0.9 alpha:0.9];
-    bar.tintColor = [UIColor whiteColor];
-    bar.titleTextAttributes = @{NSForegroundColorAttributeName : [UIColor whiteColor]};
-    bar.barStyle = UIBarStyleBlack;
+    bar.barTintColor = [WFCUConfigManager globalManager].naviBackgroudColor;
+    bar.tintColor = [WFCUConfigManager globalManager].naviTextColor;
+    bar.titleTextAttributes = @{NSForegroundColorAttributeName : [WFCUConfigManager globalManager].naviTextColor};
+    bar.barStyle = UIBarStyleDefault;
+    
+    [[UITabBar appearance] setBarTintColor:[WFCUConfigManager globalManager].frameBackgroudColor];
+    [UITabBar appearance].translucent = NO;
 }
 - (BOOL)application:(UIApplication *)application handleOpenURL:(NSURL *)url {
     return [self handleUrl:[url absoluteString] withNav:application.delegate.window.rootViewController.navigationController];
@@ -235,12 +264,9 @@
     if ([str rangeOfString:@"wildfirechat://user" options:NSCaseInsensitiveSearch].location == 0) {
         NSString *userId = [str lastPathComponent];
         WFCUProfileTableViewController *vc2 = [[WFCUProfileTableViewController alloc] init];
-        vc2.userInfo = [[WFCCIMService sharedWFCIMService] getUserInfo:userId refresh:NO];
-        if (vc2.userInfo == nil) {
-            return NO;
-        }
-        
+        vc2.userId = userId;
         vc2.hidesBottomBarWhenPushed = YES;
+        
         [navigator pushViewController:vc2 animated:YES];
         return YES;
     } else if ([str rangeOfString:@"wildfirechat://group" options:NSCaseInsensitiveSearch].location == 0) {
@@ -272,9 +298,9 @@
         localNote.alertBody = @"来电话了";
         
             WFCCUserInfo *sender = [[WFCCIMService sharedWFCIMService] getUserInfo:session.clientId refresh:NO];
-            if (sender.name) {
+            if (sender.displayName) {
                 if (@available(iOS 8.2, *)) {
-                    localNote.alertTitle = sender.name;
+                    localNote.alertTitle = sender.displayName;
                 } else {
                     // Fallback on earlier versions
                     

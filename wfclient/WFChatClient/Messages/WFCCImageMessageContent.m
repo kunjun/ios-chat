@@ -12,6 +12,9 @@
 #import "WFCCUtilities.h"
 #import "Common.h"
 
+@interface WFCCImageMessageContent ()
+@property (nonatomic, assign)CGSize size;
+@end
 
 @implementation WFCCImageMessageContent
 + (instancetype)contentFrom:(UIImage *)image {
@@ -20,21 +23,51 @@
     
     NSString *path = [[WFCCUtilities getDocumentPathWithComponent:@"/IMG"] stringByAppendingPathComponent:[NSString stringWithFormat:@"img%lld.jpg", recordTime]];
     
-    
-    NSData *imgData = UIImageJPEGRepresentation([WFCCUtilities generateThumbnail:image withWidth:1024 withHeight:1024], 0.85);
+    image = [WFCCUtilities generateThumbnail:image withWidth:1024 withHeight:1024];
+    NSData *imgData = UIImageJPEGRepresentation(image, 0.85);
     
     [imgData writeToFile:path atomically:YES];
     
     content.localPath = path;
+    content.size = image.size;
     content.thumbnail = [WFCCUtilities generateThumbnail:image withWidth:120 withHeight:120];
     
     return content;
 }
+
 - (WFCCMessagePayload *)encode {
     WFCCMediaMessagePayload *payload = [[WFCCMediaMessagePayload alloc] init];
+    payload.extra = self.extra;
     payload.contentType = [self.class getContentType];
     payload.searchableContent = @"[图片]";
-    payload.binaryContent = UIImageJPEGRepresentation(self.thumbnail, 0.45);
+    
+    NSMutableDictionary *dataDict = [NSMutableDictionary dictionary];
+    if (self.thumbParameter.length && self.size.width > 0) {
+        [dataDict setValue:self.thumbParameter forKey:@"tp"];
+        [dataDict setValue:@(self.size.width) forKey:@"w"];
+        [dataDict setValue:@(self.size.height) forKey:@"h"];
+    } else if (![[WFCCIMService sharedWFCIMService] imageThumbPara]) {
+        dataDict = nil;
+        payload.binaryContent = UIImageJPEGRepresentation(self.thumbnail, 0.45);
+    } else {
+        UIImage *image = [UIImage imageWithContentsOfFile:self.localPath];
+        if (image) {
+            [dataDict setValue:[[WFCCIMService sharedWFCIMService] imageThumbPara] forKey:@"tp"];
+            [dataDict setValue:@(image.size.width) forKey:@"w"];
+            [dataDict setValue:@(image.size.height) forKey:@"h"];
+        } else {
+            payload.binaryContent = UIImageJPEGRepresentation(self.thumbnail, 0.45);
+            dataDict = nil;
+        }
+    }
+    
+    if (dataDict) {
+        NSData *data = [NSJSONSerialization dataWithJSONObject:dataDict
+                                                       options:kNilOptions
+                                                         error:nil];
+        payload.content = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
+    
     payload.mediaType = Media_Type_IMAGE;
     payload.remoteMediaUrl = self.remoteUrl;
     payload.localMediaPath = self.localPath;
@@ -42,16 +75,31 @@
 }
 
 - (void)decode:(WFCCMessagePayload *)payload {
+    [super decode:payload];
     if ([payload isKindOfClass:[WFCCMediaMessagePayload class]]) {
         WFCCMediaMessagePayload *mediaPayload = (WFCCMediaMessagePayload *)payload;
-        self.thumbnail = [UIImage imageWithData:payload.binaryContent];
+        if ([payload.binaryContent length]) {
+            self.thumbnail = [UIImage imageWithData:payload.binaryContent];
+        }
         self.remoteUrl = mediaPayload.remoteMediaUrl;
         self.localPath = mediaPayload.localMediaPath;
+        if (mediaPayload.content.length) {
+            NSError *__error = nil;
+            NSDictionary *dictionary = [NSJSONSerialization JSONObjectWithData:[payload.content dataUsingEncoding:NSUTF8StringEncoding]
+                                                                       options:kNilOptions
+                                                                         error:&__error];
+            if (!__error) {
+                NSString *str1 = dictionary[@"w"];
+                NSString *str2 = dictionary[@"h"];
+                self.thumbParameter = dictionary[@"tp"];
+                self.size = CGSizeMake([str1 intValue], [str2 intValue]);
+            }
+        }
     }
 }
 
 - (UIImage *)thumbnail {
-    if (!_thumbnail) {
+    if (!_thumbnail && self.localPath.length) {
         UIImage *image = [UIImage imageWithContentsOfFile:self.localPath];
         _thumbnail = [WFCCUtilities generateThumbnail:image withWidth:120 withHeight:120];
     }

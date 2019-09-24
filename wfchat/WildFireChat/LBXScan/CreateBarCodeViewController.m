@@ -39,23 +39,33 @@
     
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"..." style:UIBarButtonItemStyleDone target:self action:@selector(onRightBtn:)];
     
-    self.view.backgroundColor = [UIColor colorWithRed:239/255.f green:239/255.f blue:239/255.f alpha:1.0f];
+    self.view.backgroundColor = [WFCUConfigManager globalManager].backgroudColor;
+    
     if ([self respondsToSelector:@selector(setEdgesForExtendedLayout:)]) {
         self.edgesForExtendedLayout = UIRectEdgeNone;
     }
     
+    __weak typeof(self) ws = self;
     if (self.qrType == QRType_User) {
         self.qrStr = [NSString stringWithFormat:@"wildfirechat://user/%@", self.target];
+        
+        [[NSNotificationCenter defaultCenter] addObserverForName:kUserInfoUpdated object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification * _Nonnull notification) {
+            if ([ws.target isEqualToString:notification.object]) {
+                ws.userInfo = notification.userInfo[@"userInfo"];
+            }
+        }];
+        
         self.userInfo = [[WFCCIMService sharedWFCIMService] getUserInfo:[WFCCNetworkService sharedInstance].userId refresh:NO];
-        
-        
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onUserInfoUpdated:) name:kUserInfoUpdated object:self.target];
     } else if(self.qrType == QRType_Group) {
         self.qrStr = [NSString stringWithFormat:@"wildfirechat://group/%@", self.target];
         
+        [[NSNotificationCenter defaultCenter] addObserverForName:kGroupInfoUpdated object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification * _Nonnull notification) {
+            if ([ws.target isEqualToString:notification.object]) {
+                ws.groupInfo = notification.userInfo[@"groupInfo"];
+            }
+        }];
+        
         self.groupInfo = [[WFCCIMService sharedWFCIMService] getGroupInfo:self.target refresh:NO];
-
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onGroupInfoUpdated:) name:kGroupInfoUpdated object:self.target];
     }
 }
 

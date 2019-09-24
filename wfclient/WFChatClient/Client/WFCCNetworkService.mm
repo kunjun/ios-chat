@@ -138,6 +138,10 @@ WFCCGroupInfo* convertGroupInfo(const mars::stn::TGroupInfo &tgi) {
     groupInfo.portrait = [NSString stringWithUTF8String:tgi.portrait.c_str()];
     groupInfo.owner = [NSString stringWithUTF8String:tgi.owner.c_str()];
     groupInfo.memberCount = tgi.memberCount;
+    groupInfo.mute = tgi.mute;
+    groupInfo.joinType = tgi.joinType;
+    groupInfo.privateChat = tgi.privateChat;
+    groupInfo.searchable = tgi.searchable;
     return groupInfo;
 }
 
@@ -219,7 +223,7 @@ class GFLCB : public mars::stn::GetMyFriendsCallback {
 public:
     GFLCB(id<RefreshFriendListDelegate> delegate) : m_delegate(delegate) {}
     void onSuccess(std::list<std::string> friendIdList) {
-        if(m_delegate && friendIdList.size() > 0) {
+        if(m_delegate) {
             [m_delegate onFriendListUpdated];
         }
     }
@@ -424,22 +428,23 @@ static WFCCNetworkService * sharedSingleton = nil;
     if (_bgTaskId !=  UIBackgroundTaskInvalid) {
         [[UIApplication sharedApplication] endBackgroundTask:_bgTaskId];
     }
+    __weak typeof(self) ws = self;
     _bgTaskId = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-        if (_suspendTimer) {
-            [_suspendTimer invalidate];
-            _suspendTimer = nil;
+        if (ws.suspendTimer) {
+            [ws.suspendTimer invalidate];
+            ws.suspendTimer = nil;
         }
         
-        if(_endBgTaskTimer) {
-            [_endBgTaskTimer invalidate];
-            _endBgTaskTimer = nil;
+        if(ws.endBgTaskTimer) {
+            [ws.endBgTaskTimer invalidate];
+            ws.endBgTaskTimer = nil;
         }
-        if(_forceConnectTimer) {
-            [_forceConnectTimer invalidate];
-            _forceConnectTimer = nil;
+        if(ws.forceConnectTimer) {
+            [ws.forceConnectTimer invalidate];
+            ws.forceConnectTimer = nil;
         }
         
-        _bgTaskId = UIBackgroundTaskInvalid;
+        ws.bgTaskId = UIBackgroundTaskInvalid;
     }];
 }
 
@@ -544,8 +549,8 @@ static WFCCNetworkService * sharedSingleton = nil;
   mars::stn::setRefreshSettingCallback(new GSCB(self));
   mars::baseevent::OnCreate();
 }
-- (void)connect:(NSString *)host port:(int)port {
-    mars::stn::Connect([host UTF8String], port);
+- (BOOL)connect:(NSString *)host port:(int)port {
+    bool newDB = mars::stn::Connect([host UTF8String], port);
     
   dispatch_async(dispatch_get_main_queue(), ^{
     if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
@@ -556,6 +561,10 @@ static WFCCNetworkService * sharedSingleton = nil;
       });
     }
   });
+    if (newDB) {
+        return YES;
+    }
+    return NO;
 }
 
 - (void)forceConnectTimeOut {
@@ -565,11 +574,12 @@ static WFCCNetworkService * sharedSingleton = nil;
 }
 
 - (void)forceConnect:(NSUInteger)second {
+    __weak typeof(self)ws = self;
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (_logined &&[UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+    if (ws.logined &&[UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
         [self onAppResume];
         [self startBackgroundTask];
-        _forceConnectTimer = [NSTimer scheduledTimerWithTimeInterval:second
+        ws.forceConnectTimer = [NSTimer scheduledTimerWithTimeInterval:second
                                                          target:self
                                                        selector:@selector(forceConnectTimeOut)
                                                        userInfo:nil
@@ -579,10 +589,11 @@ static WFCCNetworkService * sharedSingleton = nil;
 }
 
 - (void)cancelForceConnect {
+    __weak typeof(self)ws = self;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (_forceConnectTimer) {
-            [_forceConnectTimer invalidate];
-            _forceConnectTimer = nil;
+        if (ws.forceConnectTimer) {
+            [ws.forceConnectTimer invalidate];
+            ws.forceConnectTimer = nil;
         }
     if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
         [self onAppSuspend];
@@ -598,26 +609,28 @@ static WFCCNetworkService * sharedSingleton = nil;
     return [UIDevice currentDevice].identifierForVendor.UUIDString;
 }
 
-- (void)connect:(NSString *)userId token:(NSString *)token {
+- (BOOL)connect:(NSString *)userId token:(NSString *)token {
   _logined = YES;
     mars::app::AppCallBack::Instance()->SetAccountUserName([userId UTF8String]);
     [self createMars];
     self.userId = userId;
     self.passwd = token;
     if(!mars::stn::setAuthInfo([userId cStringUsingEncoding:NSUTF8StringEncoding], [token cStringUsingEncoding:NSUTF8StringEncoding])) {
-        return;
+        return NO;
     }
     
     self.currentConnectionStatus = kConnectionStatusConnecting;
     [[WFCCNetworkStatus sharedInstance] Start:[WFCCNetworkService sharedInstance]];
     
-    [self connect:self.serverHost port:self.serverPort];
+    return [self connect:self.serverHost port:self.serverPort];
 }
 
 - (void)disconnect:(BOOL)clearSession {
   _logined = NO;
     self.userId = nil;
-    self.currentConnectionStatus = kConnectionStatusLogout;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.currentConnectionStatus = kConnectionStatusLogout;
+    });
     [[WFCCNetworkStatus sharedInstance] Stop];
   if (mars::stn::getConnectionStatus() != mars::stn::kConnectionStatusConnected && mars::stn::getConnectionStatus() != mars::stn::kConnectionStatusReceiving) {
     [self destroyMars];
@@ -673,6 +686,9 @@ static WFCCNetworkService * sharedSingleton = nil;
     mars::stn::setDeviceToken([appName UTF8String], [token UTF8String], 2);
 }
 
+- (NSString *)encodedCid {
+    return [NSString stringWithUTF8String:mars::stn::GetEncodedCid().c_str()];
+}
 - (void)onGroupInfoUpdated:(NSArray<WFCCGroupInfo *> *)updatedGroupInfo {
   dispatch_async(dispatch_get_main_queue(), ^{
     for (WFCCGroupInfo *groupInfo in updatedGroupInfo) {
@@ -715,11 +731,22 @@ static WFCCNetworkService * sharedSingleton = nil;
     });
 }
 
+- (NSData *)encodeData:(NSData *)data {
+    std::string encodeData = mars::stn::GetEncodeDataEx(std::string((char *)data.bytes, data.length));
+    return [[NSData alloc] initWithBytes:encodeData.c_str() length:encodeData.length()];
+}
+
 - (void)onSettingUpdated {
   dispatch_async(dispatch_get_main_queue(), ^{
     [[NSNotificationCenter defaultCenter] postNotificationName:kSettingUpdated object:nil];
   });
 }
+
+- (NSData *)decodeData:(NSData *)data {
+    std::string encodeData = mars::stn::GetDecodeData(std::string((char *)data.bytes, data.length));
+    return [[NSData alloc] initWithBytes:encodeData.c_str() length:encodeData.length()];
+}
+
 #pragma mark WFCCNetworkStatusDelegate
 -(void) ReachabilityChange:(UInt32)uiFlags {
     if ((uiFlags & kSCNetworkReachabilityFlagsConnectionRequired) == 0) {

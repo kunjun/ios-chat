@@ -1,6 +1,6 @@
 ## 野火IM解决方案
 
-野火IM是一套跨平台、全开源的即时通讯解决方案，主要包含以下内容。
+野火IM是一套跨平台、核心功能开源的即时通讯解决方案，主要包含以下内容。
 
 | 仓库                                                         | 说明                                                    | 备注                                           |
 | ------------------------------------------------------------ | ------------------------------------------------------- | ---------------------------------------------- |
@@ -19,11 +19,26 @@
 
 开发一套IM系统真的很艰辛，请路过的朋友们给点个star，支持我们坚持下去🙏🙏🙏🙏🙏
 
-
 ### 联系我们
-问题讨论请加群：822762829
 
-<img src="http://static.wildfirechat.cn/qr_qqgroup.jpeg" width = 50% height = 50% />
+> 商务合作请优先采用邮箱和我们联系。技术问题请到[野火IM论坛](http://bbs.wildfirechat.cn/)发帖交流。
+
+1. heavyrain.lee  邮箱: heavyrain.lee@wildfirechat.cn  微信：wildfirechat
+2. imndx  邮箱: imndx@wildfirechat.cn  微信：wfchat
+
+### 问题交流
+
+1. 微信交流群（请先加我们好友，我们再邀请您进群）
+
+  ![微信二维码](http://static.wildfirechat.cn/wx_qr_wildfirechat.jpeg)   ![微信二维码](http://static.wildfirechat.cn/wx_qr_wfc.jpeg)
+  
+2. 如果大家发现bug，请在GitHub提issue
+3. 其他问题，请到[野火IM论坛](http://bbs.wildfirechat.cn/)进行交流学习
+4. 微信公众号
+
+<img src="http://static.wildfirechat.cn/wx_wfc_qrcode.jpg" width = 50% height = 50% />
+
+> 强烈建议关注我们的公众号。我们有新版本发布或者有重大更新会通过公众号通知大家，另外我们也会不定期的发布一些关于野火IM的技术介绍。
 
 #### 体验Demo
 我们提供了体验demo，请使用微信扫码下载安装体验

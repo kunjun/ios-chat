@@ -10,7 +10,7 @@
 #import "WFCUUtilities.h"
 #import <WFChatClient/WFCChatClient.h>
 #import "SDWebImage.h"
-
+#import "WFCUConfigManager.h"
 
 @implementation WFCUConversationTableViewCell
 - (void)awakeFromNib {
@@ -61,7 +61,7 @@
     self.timeView.hidden = YES;
     [self update:searchInfo.conversation];
     if (searchInfo.marchedCount > 1) {
-        self.digestView.text = [NSString stringWithFormat:@"%d条记录", searchInfo.marchedCount];
+        self.digestView.text = [NSString stringWithFormat:WFCString(@"NumberOfRecords"), searchInfo.marchedCount];
     } else {
         NSString *strContent = searchInfo.marchedMessage.digest;
         NSMutableAttributedString *attrStr = [[NSMutableAttributedString alloc] initWithString:strContent];
@@ -69,7 +69,7 @@
         [attrStr addAttribute:NSForegroundColorAttributeName value:[UIColor greenColor] range:range];
         self.digestView.attributedText = attrStr;
     }
-    
+    [self separator];
 }
 
 - (void)setInfo:(WFCCConversationInfo *)info {
@@ -95,10 +95,25 @@
     [self update:info.conversation];
     self.timeView.hidden = NO;
     self.timeView.text = [WFCUUtilities formatTimeLabel:info.timestamp];
-    if (info.isTop) {
-        [self.contentView setBackgroundColor:[UIColor colorWithRed:0.9 green:0.9 blue:0.9 alpha:1.f]];
+    
+    BOOL darkMode = NO;
+    if (@available(iOS 13.0, *)) {
+        if(UITraitCollection.currentTraitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
+            darkMode = YES;
+        }
+    }
+    if (darkMode) {
+        if (info.isTop) {
+            [self.contentView setBackgroundColor:[UIColor colorWithRed:0.3 green:0.3 blue:0.3 alpha:1.f]];
+        } else {
+            self.contentView.backgroundColor = [WFCUConfigManager globalManager].backgroudColor;
+        }
     } else {
-        [self.contentView setBackgroundColor:[UIColor whiteColor]];
+        if (info.isTop) {
+            [self.contentView setBackgroundColor:[UIColor colorWithRed:0.9 green:0.9 blue:0.9 alpha:1.f]];
+        } else {
+            self.contentView.backgroundColor = [WFCUConfigManager globalManager].backgroudColor;
+        }
     }
     
     if (info.lastMessage && info.lastMessage.direction == MessageDirection_Send) {
@@ -115,13 +130,15 @@
         self.statusView.hidden = YES;
     }
     [self updateDigestFrame:!self.statusView.hidden];
+    
+    [self separator];
 }
 
 - (void)updateDigestFrame:(BOOL)isSending {
     if (isSending) {
-        _digestView.frame = CGRectMake(8 + 52 + 8 + 18, 36, [UIScreen mainScreen].bounds.size.width - 68  - 16 - 8 - 18, 19);
+        _digestView.frame = CGRectMake(16 + 48 + 12 + 18, 40, [UIScreen mainScreen].bounds.size.width - 76 - 16 - 16 - 18, 19);
     } else {
-        _digestView.frame = CGRectMake(8 + 52 + 8, 36, [UIScreen mainScreen].bounds.size.width - 68  - 16 - 8, 19);
+        _digestView.frame = CGRectMake(16 + 48 + 12, 40, [UIScreen mainScreen].bounds.size.width - 76 - 16 - 16, 19);
     }
 }
 - (void)update:(WFCCConversation *)conversation {
@@ -154,7 +171,7 @@
     self.potraitView.layer.cornerRadius = 4.f;
     
     if (_info.draft.length) {
-        NSMutableAttributedString *attString = [[NSMutableAttributedString alloc] initWithString:@"[草稿]" attributes:@{NSForegroundColorAttributeName : [UIColor redColor]}];
+        NSMutableAttributedString *attString = [[NSMutableAttributedString alloc] initWithString:WFCString(@"[Draft]") attributes:@{NSForegroundColorAttributeName : [UIColor redColor]}];
         
         NSError *__error = nil;
         NSDictionary *dictionary = [NSJSONSerialization JSONObjectWithData:[_info.draft dataUsingEncoding:NSUTF8StringEncoding]
@@ -172,7 +189,12 @@
         if (text != nil) {
             [attString appendAttributedString:[[NSAttributedString alloc] initWithString:text]];
         } else {
-        [attString appendAttributedString:[[NSAttributedString alloc] initWithString:_info.draft]];
+            [attString appendAttributedString:[[NSAttributedString alloc] initWithString:_info.draft]];
+        }
+        if (_info.conversation.type == Group_Type && _info.unreadCount.unreadMentionAll + _info.unreadCount.unreadMention > 0) {
+            NSMutableAttributedString *tmp = [[NSMutableAttributedString alloc] initWithString:WFCString(@"[MentionYou]") attributes:@{NSForegroundColorAttributeName : [UIColor redColor]}];
+            [tmp appendAttributedString:attString];
+            attString = tmp;
         }
         self.digestView.attributedText = attString;
     } else if (_info.lastMessage.direction == MessageDirection_Receive && (_info.conversation.type == Group_Type || _info.conversation.type == Channel_Type)) {
@@ -190,6 +212,12 @@
         } else {
             self.digestView.text = _info.lastMessage.digest;
         }
+        
+        if (_info.conversation.type == Group_Type && _info.unreadCount.unreadMentionAll + _info.unreadCount.unreadMention > 0) {
+            NSMutableAttributedString *attString = [[NSMutableAttributedString alloc] initWithString:WFCString(@"[MentionYou]") attributes:@{NSForegroundColorAttributeName : [UIColor redColor]}];
+            [attString appendAttributedString:[[NSAttributedString alloc] initWithString:self.digestView.text]];
+            self.digestView.attributedText = attString;
+        }
     } else {
         self.digestView.text = _info.lastMessage.digest;
     }
@@ -197,7 +225,7 @@
 
 - (UIImageView *)potraitView {
     if (!_potraitView) {
-        _potraitView = [[UIImageView alloc] initWithFrame:CGRectMake(8, 8, 52, 52)];
+        _potraitView = [[UIImageView alloc] initWithFrame:CGRectMake(16, 12, 48, 48)];
         _potraitView.clipsToBounds = YES;
         _potraitView.layer.cornerRadius = 8.f;
         [self.contentView addSubview:_potraitView];
@@ -207,7 +235,7 @@
 
 - (UIImageView *)statusView {
     if (!_statusView) {
-        _statusView = [[UIImageView alloc] initWithFrame:CGRectMake(8 + 52 + 8, 38, 16, 16)];
+        _statusView = [[UIImageView alloc] initWithFrame:CGRectMake(16 + 48 + 12, 42, 16, 16)];
         _statusView.image = [UIImage imageNamed:@"conversation_message_sending"];
         [self.contentView addSubview:_statusView];
     }
@@ -216,8 +244,8 @@
 
 - (UILabel *)targetView {
     if (!_targetView) {
-        _targetView = [[UILabel alloc] initWithFrame:CGRectMake(8 + 52 + 8, 12, [UIScreen mainScreen].bounds.size.width - 68  - 68, 20)];
-        _targetView.font = [UIFont systemFontOfSize:18];
+        _targetView = [[UILabel alloc] initWithFrame:CGRectMake(16 + 48 + 12, 16, [UIScreen mainScreen].bounds.size.width - 76  - 68, 20)];
+        _targetView.font = [UIFont systemFontOfSize:16];
         [self.contentView addSubview:_targetView];
     }
     return _targetView;
@@ -225,7 +253,7 @@
 
 - (UILabel *)digestView {
     if (!_digestView) {
-        _digestView = [[UILabel alloc] initWithFrame:CGRectMake(8 + 52 + 8, 36, [UIScreen mainScreen].bounds.size.width - 68  - 16 - 8, 19)];
+        _digestView = [[UILabel alloc] initWithFrame:CGRectMake(16 + 48 + 12, 40, [UIScreen mainScreen].bounds.size.width - 76  - 16 - 16, 19)];
         _digestView.font = [UIFont systemFontOfSize:14];
         _digestView.lineBreakMode = NSLineBreakByTruncatingTail;
         _digestView.textColor = [UIColor grayColor];
@@ -236,7 +264,7 @@
 
 - (UIImageView *)silentView {
     if (!_silentView) {
-        _silentView = [[UIImageView alloc] initWithFrame:CGRectMake([UIScreen mainScreen].bounds.size.width - 12  - 12, 40, 12, 12)];
+        _silentView = [[UIImageView alloc] initWithFrame:CGRectMake([UIScreen mainScreen].bounds.size.width - 12  - 20, 45, 12, 12)];
         _silentView.image = [UIImage imageNamed:@"conversation_mute"];
         [self.contentView addSubview:_silentView];
     }
@@ -245,8 +273,8 @@
 
 - (UILabel *)timeView {
     if (!_timeView) {
-        _timeView = [[UILabel alloc] initWithFrame:CGRectMake([UIScreen mainScreen].bounds.size.width - 52  - 8, 15, 52, 15)];
-        _timeView.font = [UIFont systemFontOfSize:13];
+        _timeView = [[UILabel alloc] initWithFrame:CGRectMake([UIScreen mainScreen].bounds.size.width - 52  - 16, 20, 52, 12)];
+        _timeView.font = [UIFont systemFontOfSize:11];
         _timeView.textAlignment = NSTextAlignmentRight;
         _timeView.textColor = [UIColor grayColor];
         [self.contentView addSubview:_timeView];
@@ -263,5 +291,14 @@
         }
     }
     return _bubbleView;
+}
+
+- (UIView *)separator {
+    if (!_separator) {
+        _separator = [[UIView alloc] initWithFrame:CGRectMake(76, 71.5, [UIScreen mainScreen].bounds.size.width-76, 0.5)];
+        [_separator setBackgroundColor:[UIColor colorWithRed:0.7 green:0.7 blue:0.7 alpha:1.f]];
+        [self.contentView addSubview:_separator];
+    }
+    return _separator;
 }
 @end

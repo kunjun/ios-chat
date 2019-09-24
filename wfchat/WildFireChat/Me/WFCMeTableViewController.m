@@ -35,15 +35,14 @@
     
     [self.view addSubview:self.tableView];
     
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onUserInfoUpdated:) name:kUserInfoUpdated object:nil];
+    __weak typeof(self)ws = self;
+    [[NSNotificationCenter defaultCenter] addObserverForName:kUserInfoUpdated object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification * _Nonnull note) {
+        if ([[WFCCNetworkService sharedInstance].userId isEqualToString:note.object]) {
+            [ws.tableView reloadData];
+        }
+    }];
 }
 
-- (void)onUserInfoUpdated:(NSNotification *)notification {
-    WFCCUserInfo *userInfo = notification.userInfo[@"userInfo"];
-    if ([[WFCCNetworkService sharedInstance].userId isEqualToString:userInfo.userId]) {
-        [self.tableView reloadData]; 
-    }
-}
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
@@ -93,14 +92,14 @@
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         if (indexPath.section == 1) {
             if (indexPath.row == 0) {
-                cell.textLabel.text = @"账户与安全";
+                cell.textLabel.text = LocalizedString(@"AccountSafety");
                 cell.imageView.image = [UIImage imageNamed:@"safe_setting"];
             } else if (indexPath.row == 1) {
-                cell.textLabel.text = @"新消息通知";
+                cell.textLabel.text = LocalizedString(@"MessageNotification");
                 cell.imageView.image = [UIImage imageNamed:@"notification_setting"];
             }
         } else if(indexPath.section == 2) {
-            cell.textLabel.text = @"设置";
+            cell.textLabel.text = LocalizedString(@"Settings");
             cell.imageView.image = [UIImage imageNamed:@"MoreSetting"];
         }
 
@@ -125,9 +124,11 @@
     } else if (indexPath.section == 1) {
         if (indexPath.row == 0) {
             WFCSecurityTableViewController * stvc = [[WFCSecurityTableViewController alloc] init];
+            stvc.hidesBottomBarWhenPushed = YES;
             [self.navigationController pushViewController:stvc animated:YES];
         } else if(indexPath.row == 1) {
             WFCUMessageNotificationViewController *mnvc = [[WFCUMessageNotificationViewController alloc] init];
+            mnvc.hidesBottomBarWhenPushed = YES;
             [self.navigationController pushViewController:mnvc animated:YES];
         }
     } else if(indexPath.section == 2)  {

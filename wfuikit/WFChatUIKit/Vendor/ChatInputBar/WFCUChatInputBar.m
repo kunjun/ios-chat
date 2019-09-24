@@ -19,7 +19,8 @@
 #import "KZVideoViewController.h"
 #import "UIView+Toast.h"
 #import <WFChatClient/WFCChatClient.h>
-#import "WFCUMentionUserTableViewController.h"
+#import "WFCUContactListViewController.h"
+
 
 #define CHAT_INPUT_BAR_PADDING 8
 #define CHAT_INPUT_BAR_ICON_SIZE (CHAT_INPUT_BAR_HEIGHT - CHAT_INPUT_BAR_PADDING - CHAT_INPUT_BAR_PADDING)
@@ -39,7 +40,7 @@
 //@implementation TextInfo
 //
 //@end
-@interface WFCUChatInputBar () <UITextViewDelegate, WFCUFaceBoardDelegate, UIImagePickerControllerDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate, WFCUPluginBoardViewDelegate, UIImagePickerControllerDelegate, LocationViewControllerDelegate, UIActionSheetDelegate, KZVideoViewControllerDelegate, WFCUMentionUserDelegate>
+@interface WFCUChatInputBar () <UITextViewDelegate, WFCUFaceBoardDelegate, UIImagePickerControllerDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate, WFCUPluginBoardViewDelegate, UIImagePickerControllerDelegate, LocationViewControllerDelegate, UIActionSheetDelegate, KZVideoViewControllerDelegate>
 
 @property (nonatomic, assign)BOOL textInput;
 @property (nonatomic, assign)BOOL voiceInput;
@@ -353,7 +354,7 @@
 }
 
 - (void)resetInputBarStatue {
-    if (self.inputBarStatus != ChatInputBarRecordStatus) {
+    if (self.inputBarStatus != ChatInputBarRecordStatus && self.inputBarStatus != ChatInputBarMuteStatus) {
         self.inputBarStatus = ChatInputBarDefaultStatus;
     }
 }
@@ -381,6 +382,17 @@
 }
 
 - (void)setInputBarStatus:(ChatInputBarStatus)inputBarStatus {
+    if (inputBarStatus == _inputBarStatus) {
+        return;
+    }
+    if (_inputBarStatus == ChatInputBarMuteStatus) {
+        [self.textInputView setUserInteractionEnabled:YES];
+        [self.voiceInputBtn setEnabled:YES];
+        [self.voiceSwitchBtn setEnabled:YES];
+        [self.emojSwitchBtn setEnabled:YES];
+        [self.pluginSwitchBtn setEnabled:YES];
+    }
+    
     _inputBarStatus = inputBarStatus;
     switch (inputBarStatus) {
         case ChatInputBarKeyboardStatus:
@@ -419,6 +431,17 @@
             self.pluginInput = NO;
             self.textInput = YES;
             [self.textInputView resignFirstResponder];
+            break;
+        case ChatInputBarMuteStatus:
+            self.voiceInput = NO;
+            self.emojInput = NO;
+            self.pluginInput = NO;
+            self.textInput = YES;
+            [self.textInputView setUserInteractionEnabled:NO];
+            [self.voiceInputBtn setEnabled:NO];
+            [self.voiceSwitchBtn setEnabled:NO];
+            [self.emojSwitchBtn setEnabled:NO];
+            [self.pluginSwitchBtn setEnabled:NO];
             break;
         default:
             break;
@@ -716,13 +739,44 @@
     BOOL needUpdateText = NO;
     if(self.conversation.type == Group_Type) {
         if ([text isEqualToString:@"@"]) {
-            WFCUMentionUserTableViewController *mvc = [[WFCUMentionUserTableViewController alloc] init];
-            mvc.groupId = self.conversation.target;
-            mvc.delegate = self;
-            mvc.range = range;
             
-            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:mvc];
-            [[self.delegate requireNavi] presentViewController:nav animated:YES completion:nil];
+            WFCUContactListViewController *pvc = [[WFCUContactListViewController alloc] init];
+            pvc.selectContact = YES;
+            pvc.multiSelect = NO;
+            NSMutableArray *disabledUser = [[NSMutableArray alloc] init];
+            [disabledUser addObject:[WFCCNetworkService sharedInstance].userId];
+            pvc.disableUsers = disabledUser;
+            NSMutableArray *candidateUser = [[NSMutableArray alloc] init];
+            NSArray<WFCCGroupMember *> *members = [[WFCCIMService sharedWFCIMService] getGroupMembers:self.conversation.target forceUpdate:NO];
+            for (WFCCGroupMember *member in members) {
+                [candidateUser addObject:member.memberId];
+            }
+            pvc.candidateUsers = candidateUser;
+            pvc.withoutCheckBox = YES;
+            __weak typeof(self)ws = self;
+            pvc.selectResult = ^(NSArray<NSString *> *contacts) {
+                if (contacts.count == 1) {
+                    WFCCUserInfo *userInfo = [[WFCCIMService sharedWFCIMService] getUserInfo:[contacts objectAtIndex:0] inGroup:self.conversation.target refresh:NO];
+                    NSString *name = userInfo.displayName;
+                    if (userInfo.groupAlias.length) {
+                        name = userInfo.groupAlias;
+                    }
+                    
+                    NSString *text = [NSString stringWithFormat:@"@%@ ", name];
+                    [ws didMentionType:1 user:[contacts objectAtIndex:0] range:NSMakeRange(range.location, text.length) text:text];
+                } else {
+                    [ws didCancelMentionAtRange:range];
+                }
+            };
+            
+            pvc.cancelSelect = ^(void) {
+                [ws didCancelMentionAtRange:range];
+            };
+            
+            pvc.disableUsersSelected = YES;
+            
+            UINavigationController *navi = [[UINavigationController alloc] initWithRootViewController:pvc];
+            [[self.delegate requireNavi] presentViewController:navi animated:YES completion:nil];
             return NO;
         }
         
@@ -891,7 +945,7 @@
         UIActionSheet *actionSheet =
         [[UIActionSheet alloc] initWithTitle:nil
                                     delegate:self
-                           cancelButtonTitle:@"取消"
+                           cancelButtonTitle:WFCString(@"Cancel")
                       destructiveButtonTitle:@"视频"
                            otherButtonTitles:@"音频", nil];
         [actionSheet showInView:self.parentView];
@@ -982,11 +1036,26 @@
     range.location += range.length;
     range.length = 0;
     self.textInputView.selectedRange = range;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.textInputView.isFirstResponder) {
+            [self.textInputView becomeFirstResponder];
+        }
+    });
 }
 
 - (void)didCancelMentionAtRange:(NSRange)range {
     [self.textInputView.textStorage replaceCharactersInRange:NSMakeRange(range.location, 0) withString:@"@"];
     
+    range.location += 1;
     self.textInputView.selectedRange = range;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.textInputView.isFirstResponder) {
+            [self.textInputView becomeFirstResponder];
+        }
+    });
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 @end

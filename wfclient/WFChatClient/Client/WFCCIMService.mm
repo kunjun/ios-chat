@@ -409,6 +409,7 @@ static WFCCMessage *convertProtoMessage(const mars::stn::TMessage *tMessage) {
   for (std::list<std::string>::const_iterator it = tMessage->content.mentionedTargets.begin(); it != tMessage->content.mentionedTargets.end(); it++) {
     [mentionedType addObject:[NSString stringWithUTF8String:(*it).c_str()]];
   }
+    payload.extra = [NSString stringWithUTF8String:tMessage->content.extra.c_str()];
   
     ret.content = [[WFCCIMService sharedWFCIMService] messageContentFromPayload:payload];
     return ret;
@@ -450,6 +451,7 @@ static WFCCIMService * sharedSingleton = nil;
 
 static void fillTMessageContent(mars::stn::TMessageContent &tmsgcontent, WFCCMessageContent *content) {
     WFCCMessagePayload *payload = [content encode];
+    payload.extra = content.extra;
     tmsgcontent.type = payload.contentType;
     tmsgcontent.searchableContent = [payload.searchableContent UTF8String] ? [payload.searchableContent UTF8String] : "";
     tmsgcontent.pushContent = [payload.pushContent UTF8String] ? [payload.pushContent UTF8String] : "";
@@ -470,6 +472,7 @@ static void fillTMessageContent(mars::stn::TMessageContent &tmsgcontent, WFCCMes
     for (NSString *target in payload.mentionedTargets) {
         tmsgcontent.mentionedTargets.insert(tmsgcontent.mentionedTargets.end(), [target UTF8String]);
     }
+    tmsgcontent.extra = [payload.extra UTF8String] ? [payload.extra UTF8String] : "";
 }
 
 
@@ -619,6 +622,65 @@ static void fillTMessage(mars::stn::TMessage &tmsg, WFCCConversation *conv, WFCC
     return convertProtoMessageList(messages, YES);
 }
 
+- (NSArray<WFCCMessage *> *)getMessages:(NSArray<NSNumber *> *)conversationTypes
+                                           lines:(NSArray<NSNumber *> *)lines
+                                    contentTypes:(NSArray<NSNumber *> *)contentTypes
+                                            from:(NSUInteger)fromIndex
+                                           count:(NSInteger)count
+                                        withUser:(NSString *)user {
+    std::list<int> convtypes;
+    for (NSNumber *ct in conversationTypes) {
+        convtypes.push_back([ct intValue]);
+    }
+    
+    std::list<int> ls;
+    for (NSNumber *type in lines) {
+        ls.push_back([type intValue]);
+    }
+    
+    
+    std::list<int> types;
+    for (NSNumber *num in contentTypes) {
+        types.push_back(num.intValue);
+    }
+    bool direction = true;
+    if (count < 0) {
+        direction = false;
+        count = -count;
+    }
+    
+    std::list<mars::stn::TMessage> messages = mars::stn::MessageDB::Instance()->GetMessages(convtypes, ls, types, direction, (int)count, fromIndex, user ? [user UTF8String] : "");
+    return convertProtoMessageList(messages, YES);
+}
+
+- (NSArray<WFCCMessage *> *)getMessages:(NSArray<NSNumber *> *)conversationTypes
+                                           lines:(NSArray<NSNumber *> *)lines
+                                   messageStatus:(WFCCMessageStatus)messageStatus
+                                            from:(NSUInteger)fromIndex
+                                           count:(NSInteger)count
+                                        withUser:(NSString *)user {
+    std::list<int> convtypes;
+    for (NSNumber *ct in conversationTypes) {
+        convtypes.push_back([ct intValue]);
+    }
+    
+    std::list<int> ls;
+    for (NSNumber *type in lines) {
+        ls.push_back([type intValue]);
+    }
+    
+    
+
+    bool direction = true;
+    if (count < 0) {
+        direction = false;
+        count = -count;
+    }
+    
+    std::list<mars::stn::TMessage> messages = mars::stn::MessageDB::Instance()->GetMessages(convtypes, ls, messageStatus, direction, (int)count, fromIndex, user ? [user UTF8String] : "");
+    return convertProtoMessageList(messages, YES);
+}
+
 - (void)getRemoteMessages:(WFCCConversation *)conversation
                    before:(long long)beforeMessageUid
                     count:(NSUInteger)count
@@ -664,6 +726,19 @@ static void fillTMessage(mars::stn::TMessage &tmsg, WFCCConversation *conv, WFCC
     mars::stn::MessageDB::Instance()->ClearUnreadStatus(conversation.type, [conversation.target UTF8String], conversation.line);
 }
 
+- (void)clearUnreadStatus:(NSArray<NSNumber *> *)conversationTypes
+                    lines:(NSArray<NSNumber *> *)lines {
+    std::list<int> types;
+    std::list<int> ls;
+    for (NSNumber *type in conversationTypes) {
+        types.insert(types.end(), type.intValue);
+    }
+    
+    for (NSNumber *line in lines) {
+        ls.insert(ls.end(), line.intValue);
+    }
+    mars::stn::MessageDB::Instance()->ClearUnreadStatus(types, ls);
+}
 - (void)clearAllUnreadStatus {
     mars::stn::MessageDB::Instance()->ClearAllUnreadStatus();
 }
@@ -839,6 +914,10 @@ WFCCGroupInfo *convertProtoGroupInfo(mars::stn::TGroupInfo tgi) {
     groupInfo.portrait = [NSString stringWithUTF8String:tgi.portrait.c_str()];
     groupInfo.owner = [NSString stringWithUTF8String:tgi.owner.c_str()];
     groupInfo.memberCount = tgi.memberCount;
+    groupInfo.mute = tgi.mute;
+    groupInfo.joinType = tgi.joinType;
+    groupInfo.privateChat = tgi.privateChat;
+    groupInfo.searchable = tgi.searchable;
     return groupInfo;
 }
 
@@ -1129,6 +1208,7 @@ WFCCGroupInfo *convertProtoGroupInfo(mars::stn::TGroupInfo tgi) {
 - (void)createGroup:(NSString *)groupId
                name:(NSString *)groupName
            portrait:(NSString *)groupPortrait
+               type:(WFCCGroupType)type
             members:(NSArray *)groupMembers
         notifyLines:(NSArray<NSNumber *> *)notifyLines
       notifyContent:(WFCCMessageContent *)notifyContent
@@ -1146,7 +1226,7 @@ WFCCGroupInfo *convertProtoGroupInfo(mars::stn::TGroupInfo tgi) {
     for (NSNumber *number in notifyLines) {
         lines.push_back([number intValue]);
     }
-    mars::stn::createGroup(groupId == nil ? "" : [groupId UTF8String], groupName == nil ? "" : [groupName UTF8String], groupPortrait == nil ? "" : [groupPortrait UTF8String], memberList, lines, tcontent, new IMCreateGroupCallback(successBlock, errorBlock));
+    mars::stn::createGroup(groupId == nil ? "" : [groupId UTF8String], groupName == nil ? "" : [groupName UTF8String], groupPortrait == nil ? "" : [groupPortrait UTF8String], type, memberList, lines, tcontent, new IMCreateGroupCallback(successBlock, errorBlock));
 }
 
 - (void)addMembers:(NSArray *)members
@@ -1312,6 +1392,30 @@ WFCCGroupInfo *convertProtoGroupInfo(mars::stn::TGroupInfo tgi) {
     mars::stn::transferGroup([groupId UTF8String], [newOwner UTF8String], lines, tcontent, new IMGeneralOperationCallback(successBlock, errorBlock));
 }
 
+- (void)setGroupManager:(NSString *)groupId
+                  isSet:(BOOL)isSet
+              memberIds:(NSArray<NSString *> *)memberIds
+            notifyLines:(NSArray<NSNumber *> *)notifyLines
+          notifyContent:(WFCCMessageContent *)notifyContent
+                success:(void(^)(void))successBlock
+                  error:(void(^)(int error_code))errorBlock {
+    
+    mars::stn::TMessageContent tcontent;
+    fillTMessageContent(tcontent, notifyContent);
+    
+    std::list<int> lines;
+    for (NSNumber *number in notifyLines) {
+        lines.push_back([number intValue]);
+    }
+    
+    std::list<std::string> memberList;
+    for (NSString *member in memberIds) {
+        memberList.push_back([member UTF8String]);
+    }
+    
+    mars::stn::SetGroupManager([groupId UTF8String], memberList, isSet, lines, tcontent, new IMGeneralOperationCallback(successBlock, errorBlock));
+}
+
 - (NSArray<NSString *> *)getFavGroups {
     NSDictionary *favGroupDict = [[WFCCIMService sharedWFCIMService] getUserSettings:UserSettingScope_Favourite_Group];
     NSMutableArray *ids = [[NSMutableArray alloc] init];
@@ -1335,6 +1439,9 @@ WFCCGroupInfo *convertProtoGroupInfo(mars::stn::TGroupInfo tgi) {
     [[WFCCIMService sharedWFCIMService] setUserSetting:UserSettingScope_Favourite_Group key:groupId value:fav? @"1" : @"0" success:successBlock error:errorBlock];
 }
 - (WFCCGroupInfo *)getGroupInfo:(NSString *)groupId refresh:(BOOL)refresh {
+    if (!groupId) {
+        return nil;
+    }
     mars::stn::TGroupInfo tgi = mars::stn::MessageDB::Instance()->GetGroupInfo([groupId UTF8String], refresh);
     return convertProtoGroupInfo(tgi);
 }
@@ -1545,5 +1652,13 @@ WFCCGroupInfo *convertProtoGroupInfo(mars::stn::TGroupInfo tgi) {
         }
     }];
     return ids;
+}
+
+- (NSString *)imageThumbPara {
+    std::string cstr = mars::stn::GetImageThumbPara();
+    if (cstr.empty()) {
+        return nil;
+    }
+    return [NSString stringWithUTF8String:cstr.c_str()];
 }
 @end

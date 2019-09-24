@@ -13,7 +13,7 @@
 #import "WFCSecurityTableViewController.h"
 #import "WFCAboutViewController.h"
 #import "WFCPrivacyViewController.h"
-
+#import "WFCPrivacyTableViewController.h"
 
 @interface WFCSettingTableViewController () <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong)UITableView *tableView;
@@ -23,8 +23,6 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"设置";
-    
     self.tableView = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, self.view.frame.size.height) style:UITableViewStyleGrouped];
     
     self.tableView.delegate = self;
@@ -47,20 +45,24 @@
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == 0) {
+        WFCPrivacyTableViewController *pvc = [[WFCPrivacyTableViewController alloc] init];
+        pvc.hidesBottomBarWhenPushed = YES;
+        [self.navigationController pushViewController:pvc animated:YES];
+    } else if (indexPath.section == 1) {
         if (indexPath.row == 1) {
             WFCUMessageListViewController *mvc = [[WFCUMessageListViewController alloc] init];
             mvc.conversation = [[WFCCConversation alloc] init];
             mvc.conversation.type = Single_Type;
             mvc.conversation.target = @"cgc8c8VV";
             mvc.conversation.line = 0;
-            
+        
             mvc.hidesBottomBarWhenPushed = YES;
             [self.navigationController pushViewController:mvc animated:YES];
         } else if (indexPath.row == 2) {
             WFCAboutViewController *avc = [[WFCAboutViewController alloc] init];
             [self.navigationController pushViewController:avc animated:YES];
         }
-    } else if(indexPath.section == 1) {
+    } else if(indexPath.section == 2) {
         if (indexPath.row == 0) {
             WFCPrivacyViewController * pvc = [[WFCPrivacyViewController alloc] init];
             pvc.isPrivacy = NO;
@@ -70,6 +72,28 @@
             pvc.isPrivacy = YES;
             [self.navigationController pushViewController:pvc animated:YES];
         }
+    } else if(indexPath.section == 3) {
+        __weak typeof(self)ws = self;
+        UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"举报" message:@"如果您发现有违反法律和道德的内容，或者您的合法权益受到侵犯，请截图之后发送给我们。我们会在24小时之内处理。处理办法包括不限于删除内容，对作者进行警告，冻结账号，甚至报警处理。举报请到\"设置->设置->举报\"联系我们！" preferredStyle:UIAlertControllerStyleAlert];
+        
+        UIAlertAction *action1 = [UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+            
+        }];
+        [alertController addAction:action1];
+        
+        UIAlertAction *action2 = [UIAlertAction actionWithTitle:@"举报" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            WFCUMessageListViewController *mvc = [[WFCUMessageListViewController alloc] init];
+            mvc.conversation = [[WFCCConversation alloc] init];
+            mvc.conversation.type = Single_Type;
+            mvc.conversation.target = @"cgc8c8VV";
+            mvc.conversation.line = 0;
+            
+            mvc.hidesBottomBarWhenPushed = YES;
+            [ws.navigationController pushViewController:mvc animated:YES];
+        }];
+        [alertController addAction:action2];
+        
+        [self presentViewController:alertController animated:YES completion:nil];
     }
 }
 
@@ -79,15 +103,19 @@
 
 //#pragma mark - Table view data source
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 3;
+    return 5;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) {
-        return 3;
+        return 1;
     } else if (section == 1) {
-        return 2;
+        return 3;
     } else if (section == 2) {
+        return 2;
+    } else if (section == 3) {
+        return 1;
+    } else if (section == 4) {
         return 1;
     }
     return 0;
@@ -105,30 +133,34 @@
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     
     if(indexPath.section == 0) {
+        cell.textLabel.text = LocalizedString(@"PrivacySettings");
+    } else if(indexPath.section == 1) {
         if (indexPath.row == 0) {
-            cell.textLabel.text = @"当前版本";
+            cell.textLabel.text = LocalizedString(@"CurrentVersion");
             cell.detailTextLabel.text = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
             cell.accessoryType = UITableViewCellAccessoryNone;
         } if (indexPath.row == 1) {
-            cell.textLabel.text = @"帮助与反馈";
+            cell.textLabel.text = LocalizedString(@"HelpFeedback");
         } else if (indexPath.row == 2) {
-            cell.textLabel.text = @"关于火信";
+            cell.textLabel.text = LocalizedString(@"AboutWFChat");
         }
-    } else if(indexPath.section == 1) {
+    } else if(indexPath.section == 2) {
         if (indexPath.row == 0) {
-            cell.textLabel.text = @"用户协议";
+            cell.textLabel.text = LocalizedString(@"UserAgreement");
         } if (indexPath.row == 1) {
-            cell.textLabel.text = @"隐私政策";
-        } else if (indexPath.row == 2) {
-            cell.textLabel.text = @"关于火信";
+            cell.textLabel.text = LocalizedString(@"PrivacyPolicy");
         }
-    } else if (indexPath.section == 2) {
+    } else if(indexPath.section == 3) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = LocalizedString(@"Complain");
+        }
+    } else if (indexPath.section == 4) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"buttonCell"];
         for (UIView *subView in cell.subviews) {
             [subView removeFromSuperview];
         }
         UIButton *btn = [[UIButton alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 48)];
-        [btn setTitle:@"退出登录" forState:UIControlStateNormal];
+        [btn setTitle:LocalizedString(@"Logout") forState:UIControlStateNormal];
 
         [btn setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
         [btn addTarget:self action:@selector(onLogoutBtn:) forControlEvents:UIControlEventTouchUpInside];
@@ -144,48 +176,4 @@
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"savedUserId"];
     [[WFCCNetworkService sharedInstance] disconnect:YES];
 }
-/*
-// Override to support conditional editing of the table view.
-- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
-    // Return NO if you do not want the specified item to be editable.
-    return YES;
-}
-*/
-
-/*
-// Override to support editing the table view.
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (editingStyle == UITableViewCellEditingStyleDelete) {
-        // Delete the row from the data source
-        [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
-    } else if (editingStyle == UITableViewCellEditingStyleInsert) {
-        // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view
-    }   
-}
-*/
-
-/*
-// Override to support rearranging the table view.
-- (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)fromIndexPath toIndexPath:(NSIndexPath *)toIndexPath {
-}
-*/
-
-/*
-// Override to support conditional rearranging of the table view.
-- (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath {
-    // Return NO if you do not want the item to be re-orderable.
-    return YES;
-}
-*/
-
-/*
-#pragma mark - Navigation
-
-// In a storyboard-based application, you will often want to do a little preparation before navigation
-- (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
-    // Get the new view controller using [segue destinationViewController].
-    // Pass the selected object to the new view controller.
-}
-*/
-
 @end
